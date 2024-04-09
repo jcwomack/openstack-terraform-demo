@@ -9,12 +9,16 @@ terraform {
 }
 
 provider openstack {
-  cloud = "openstack"
-  tenant_name = "demo"
 }
 
-data "openstack_images_image_v2" "rocky_9" {
-  name = "Rocky-9.2"
+variable "cluster_id" {
+  type = string
+  description = "Pet name for previously created CitC instance to use resources from"
+  nullable = false
+}
+
+data "openstack_images_image_v2" "rocky_8" {
+  name = "Rocky-8.8"
   most_recent = true
 }
 
@@ -22,14 +26,17 @@ data "openstack_compute_flavor_v2" "m1_medium" {
   name = "m1.medium"
 }
 
-resource "openstack_compute_instance_v2" "my_instance" {
-  name = "my-tf-test"
+resource "openstack_compute_instance_v2" "mgmt_tf_test" {
+  name = "mgmt_tf_test"
   flavor_id = data.openstack_compute_flavor_v2.m1_medium.id
-  security_groups = ["default"]
-  key_pair = "my_key_pair_name"
+  security_groups = [
+    "external-${var.cluster_id}",
+    "cluster-${var.cluster_id}",
+  ]
+  key_pair = "citc-admin-${var.cluster_id}"
 
   block_device {
-    uuid = data.openstack_images_image_v2.rocky_9.id
+    uuid = data.openstack_images_image_v2.rocky_8.id
     source_type = "image"
     volume_size = 40
     boot_index = 0
@@ -38,19 +45,23 @@ resource "openstack_compute_instance_v2" "my_instance" {
   }
 
   network {
-    name = "demo-vxlan"
+    name = "network-${var.cluster_id}"
+  }
+
+  network {
+    name = "external-ceph"
   }
 }
 
-resource "openstack_compute_floatingip_v2" "floatip_1" {
+resource "openstack_compute_floatingip_v2" "mgmt_tf_test" {
   pool = "external"
 }
 
-resource "openstack_compute_floatingip_associate_v2" "fip_1" {
-  floating_ip = openstack_compute_floatingip_v2.floatip_1.address
-  instance_id = openstack_compute_instance_v2.my_instance.id
+resource "openstack_compute_floatingip_associate_v2" "mgmt_tf_test" {
+  floating_ip = openstack_compute_floatingip_v2.mgmt_tf_test.address
+  instance_id = openstack_compute_instance_v2.mgmt_tf_test.id
 }
 
 output "ip" {
- value = openstack_compute_floatingip_v2.floatip_1.address
+ value = openstack_compute_floatingip_v2.mgmt_tf_test.address
 }
