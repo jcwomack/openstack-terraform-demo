@@ -17,23 +17,49 @@ variable "cluster_id" {
   nullable = false
 }
 
+variable "public_key" {
+  type = string
+  description = "SSH public key to be injected into instance by cloud-init"
+  nullable = false
+  sensitive = false
+}
+
+variable "mgmt_flavor" {
+  default = "m1.medium"
+  type = string
+  nullable = false
+  sensitive = false
+}
+
+data "template_file" "user_data" {
+  template = file("bootstrap.sh.tpl")
+}
+
 data "openstack_images_image_v2" "rocky_8" {
   name = "Rocky-8.8"
   most_recent = true
 }
 
-data "openstack_compute_flavor_v2" "m1_medium" {
-  name = "m1.medium"
+resource "openstack_compute_keypair_v2" "citc_admin" {
+  name       = "citc-admin-${var.cluster_id}_tf_test"
+  public_key = var.public_key
 }
 
 resource "openstack_compute_instance_v2" "mgmt_tf_test" {
   name = "mgmt_tf_test"
-  flavor_id = data.openstack_compute_flavor_v2.m1_medium.id
+  flavor_name = var.mgmt_flavor
   security_groups = [
     "external-${var.cluster_id}",
     "cluster-${var.cluster_id}",
   ]
-  key_pair = "citc-admin-${var.cluster_id}"
+  key_pair = openstack_compute_keypair_v2.citc_admin.name
+
+  user_data = base64encode(data.template_file.user_data.rendered)
+
+  metadata = {
+    "cluster" = var.cluster_id
+  }
+  tags = ["mgmt"]
 
   block_device {
     uuid = data.openstack_images_image_v2.rocky_8.id
